@@ -199,22 +199,24 @@ opponent_pokemon = random.choice([charmander, squirtle, bulbasaur])
 
 while player_pokemon == opponent_pokemon:
     opponent_pokemon = random.choice([charmander, squirtle, bulbasaur])
-    
+
+from itertools import product
+
+def generate_valid_sequences(pokemon1, pokemon2, length=3):
+    all_moves = [move.name for move in pokemon1.moves + pokemon2.moves]
+    sequences = []
+    for combo in product(all_moves, repeat=length):
+        if all(combo[i] != combo[i+1] for i in range(len(combo)-1)):  # no consecutive repeats
+            sequences.append(list(combo))
+    return sequences
+
+
 nb = NaiveBayesPredictor()
-if (player_pokemon.name == "Charmander" and opponent_pokemon.name == "Squirtle"):
-        nb.train([["Tackle", "Water Gun", "Tackle"], ["Tackle", "Tackle", "Water Gun"], ["Water Gun", "Tackle", "Tackle"]])
-elif (player_pokemon.name == "Squirtle" and opponent_pokemon.name == "Charmander"):
-        nb.train([["Tackle", "Ember", "Tackle"], ["Tackle", "Tackle", "Ember"], ["Ember", "Tackle", "Tackle"]])
-elif (player_pokemon.name == "Squirtle" and opponent_pokemon.name == "Bulbasaur"):
-        nb.train([["Tackle", "Vine Whip", "Tackle"], ["Vine Whip", "Tackle", "Tackle"], ["Tackle", "Tackle", "Vine Whip"]])
-elif (player_pokemon.name == "Bulbasaur" and opponent_pokemon.name == "Squirtle"):
-        nb.train([["Tackle", "Water Gun", "Tackle"], ["Water Gun", "Tackle", "Tackle"], ["Tackle", "Tackle", "Water Gun"]])
-elif (player_pokemon.name == "Bulbasaur" and opponent_pokemon.name == "Charmander"):
-        nb.train([["Tackle", "Ember", "Tackle"], ["Ember", "Tackle", "Tackle"], ["Tackle", "Tackle", "Ember"]])
-elif (player_pokemon.name == "Charmander" and opponent_pokemon.name == "Bulbasaur"):
-        nb.train([["Tackle", "Vine Whip", "Tackle"], ["Vine Whip", "Tackle", "Tackle"], ["Tackle", "Tackle", "Vine Whip"]])
-else:
-        nb.train([["Tackle", "Tackle", "Tackle"], ["Tackle", "Tackle", "Tackle"]])
+training_sequences = generate_valid_sequences(player_pokemon, opponent_pokemon, length=3)
+nb.train(training_sequences)
+##
+print(f"Training {player_pokemon.name} vs {opponent_pokemon.name} with {len(training_sequences)} sequences")
+
 
 current_move_name = "Tackle"
 
@@ -241,18 +243,31 @@ def draw_hp_bar(pokemon, x, y):
     pygame.draw.rect(screen, (0, 255, 0), (x, y, int(bar_width * hp_ratio), 10))
 
 def draw_dialog(text, moves=None):
-    pygame.draw.rect(screen, (230, 230, 230), (50, 450, 700, 130))
-    pygame.draw.rect(screen, (0, 0, 0), (50, 450, 700, 130), 2)
-    y_offset = 460
+    box_x, box_y, box_w, box_h = 50, 450, 700, 130
+    pygame.draw.rect(screen, (230, 230, 230), (box_x, box_y, box_w, box_h))  # Background
+    pygame.draw.rect(screen, (0, 0, 0), (box_x, box_y, box_w, box_h), 2)     # Border
+
+    padding = 10
     if moves:
+        # Moves list still goes to the top-left
+        y_offset = box_y + padding
         for i, move in enumerate(moves):
             rendered = font.render(f"{i+1}: {move.name}", True, (0, 0, 0))
-            screen.blit(rendered, (60, y_offset))
+            screen.blit(rendered, (box_x + padding, y_offset))
             y_offset += 20
-    for line in text.split("\n"):
+
+    # Dialog text in bottom-right
+    lines = text.split("\n")
+    line_spacing = 25
+    total_text_height = len(lines) * line_spacing
+    y_start = box_y + box_h - total_text_height - padding
+    for i, line in enumerate(lines):
         rendered = font.render(line, True, (0, 0, 0))
-        screen.blit(rendered, (60, y_offset))
-        y_offset += 25
+        text_width = rendered.get_width()
+        x_pos = box_x + box_w - text_width - padding
+        y_pos = y_start + i * line_spacing
+        screen.blit(rendered, (x_pos, y_pos))
+
 
 def draw_battle_screen(dialog_text=""):
     screen.fill(bg_color)
@@ -272,6 +287,32 @@ def draw_battle_screen(dialog_text=""):
     draw_dialog(dialog_text, player_pokemon.moves)
 
 
+
+def show_move_dialog(attacker, defender, move, damage):
+    effectiveness = type_effectiveness(move.type, defender.type)
+    
+    # Base move message
+    dialog = f"{attacker.name} used {move.name}!"
+    draw_battle_screen(dialog)
+    pygame.display.flip()
+    pygame.time.wait(1500)
+
+    # Effectiveness message
+    if damage == 0:
+        dialog = "But it missed!"
+    elif effectiveness > 1.0:
+        dialog = "It's super effective!"
+    elif effectiveness < 1.0:
+        dialog = "It's not very effective..."
+    else:
+        dialog = ""
+
+    if dialog:
+        draw_battle_screen(dialog)
+        pygame.display.flip()
+        pygame.time.wait(1500)
+
+
 def draw_menu():
     screen.fill(bg_color)
     title = font.render("Choose AI Strategy:", True, (0, 0, 0))
@@ -285,6 +326,17 @@ def draw_menu():
     screen.blit(option3, (WIDTH//2 - 100, HEIGHT//2 + 30))
     screen.blit(option4, (WIDTH//2 - 100, HEIGHT//2 + 60))
     pygame.display.flip()
+
+
+from itertools import product
+
+def generate_valid_sequences(pokemon1, pokemon2, length=3):
+    all_moves = [move.name for move in pokemon1.moves + pokemon2.moves]
+    sequences = []
+    for combo in product(all_moves, repeat=length):
+        if all(combo[i] != combo[i+1] for i in range(len(combo)-1)):  # avoid same move twice in a row
+            sequences.append(list(combo))
+    return sequences
 
 
 # --- Main Game Loop ---
@@ -329,7 +381,13 @@ while running:
                     selected_move = player_pokemon.moves[selected_index]
                     damage = calculate_damage(player_pokemon, opponent_pokemon, selected_move)
                     opponent_pokemon.take_damage(damage)
+
+                    # Show dialog with delay
+                    show_move_dialog(player_pokemon, opponent_pokemon, selected_move, damage)
+
                     turn = 'ai'
+
+
 
     if turn == 'ai' and not opponent_pokemon.is_fainted():
         pygame.time.delay(500)
@@ -361,7 +419,12 @@ while running:
         
         damage = calculate_damage(opponent_pokemon, player_pokemon, ai_move)
         player_pokemon.take_damage(damage)
+
+        # Show dialog with delay
+        show_move_dialog(opponent_pokemon, player_pokemon, ai_move, damage)
+
         turn = 'player'
+
 
 
 
